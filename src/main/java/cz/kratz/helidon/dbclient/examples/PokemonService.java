@@ -128,7 +128,7 @@ private static final Logger LOGGER = Logger.getLogger(PokemonService.class.getNa
             objectBuilder.add("id", pid);
             objectBuilder.add("name", row.column("name").as(String.class));
             System.out.printf("id: %d name: %s\n", pid, row.column("name").as(String.class));
-            dbClient.execute(exec -> exec
+            CompletionStage<Void> cs = dbClient.execute(exec -> exec
                     .namedQuery("select-type-name-by-pokemon-id", pid)
             ).thenAccept(rows -> {
                 rows.collect().thenAccept(rowsList -> {
@@ -139,11 +139,10 @@ private static final Logger LOGGER = Logger.getLogger(PokemonService.class.getNa
                     System.out.printf("id: %d Added types: %d\n", pid, rowsList.size());
                     arrayBuilder.add(objectBuilder.build());
                 });
-            }
-            ).exceptionally(t -> {
-                t.printStackTrace();
-                return null;
             });
+            queryFuture = queryFuture == null
+                    ? cs
+                    : queryFuture.thenCompose(result -> cs);
         }
 
         @Override
@@ -155,7 +154,7 @@ private static final Logger LOGGER = Logger.getLogger(PokemonService.class.getNa
         @Override
         public void onComplete() {
             System.out.printf("Completed\n");
-            jsonFuture.complete(arrayBuilder.build());
+            queryFuture.thenRun(() -> jsonFuture.complete(arrayBuilder.build()));
         }
 
     }
