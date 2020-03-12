@@ -104,16 +104,16 @@ private static final Logger LOGGER = Logger.getLogger(PokemonService.class.getNa
         final DbClient dbClient;
         final JsonArrayBuilder arrayBuilder;
         final CompletableFuture<JsonValue> jsonFuture;
-        final AtomicInteger queryCounter;
-        final CompletableFuture<Void> queryFuture;
+        //final AtomicInteger queryCounter;
+        CompletionStage<Void> queryFuture;
         Flow.Subscription subscription;
 
         private ReadPokemonRows(DbClient dbClient, CompletableFuture<JsonValue> jsonFuture) {
             this.dbClient = dbClient;
             this.arrayBuilder = Json.createArrayBuilder();
             this.jsonFuture = jsonFuture;
-            this.queryCounter = new AtomicInteger(0);
-            this.queryFuture = new CompletableFuture<>();
+            //this.queryCounter = new AtomicInteger(0);
+            this.queryFuture = null; //new CompletableFuture<>();
         }
 
         @Override
@@ -122,29 +122,44 @@ private static final Logger LOGGER = Logger.getLogger(PokemonService.class.getNa
             subscription.request(Long.MAX_VALUE);
         }
 
+        private void selectTypes(List<DbRow> rowsList, JsonObjectBuilder objectBuilder) {
+
+            final JsonArrayBuilder typesBuilder = Json.createArrayBuilder();
+            rowsList.forEach(typeRow -> typesBuilder
+                    .add(Json.createValue(typeRow.column("name").as(String.class))));
+            objectBuilder.add("type", typesBuilder.build());
+            synchronized (this) {
+                arrayBuilder.add(objectBuilder.build());
+            }
+        }
+
         @Override
         public void onNext(DbRow row) {
             final JsonObjectBuilder objectBuilder = Json.createObjectBuilder();
             final int pid = row.column("id").as(Integer.class);
             objectBuilder.add("id", pid);
             objectBuilder.add("name", row.column("name").as(String.class));
-            queryCounter.incrementAndGet();
-            dbClient.execute(exec -> exec
+            //queryCounter.incrementAndGet();
+
+//            queryFuture = queryFuture == null
+//            ? selectTypes(dbClient, pid, objectBuilder)
+//            : queryFuture.thenCompose(result -> selectTypes(dbClient, pid, objectBuilder));
+            //final CompletionStage<Void>oldQueryFuture = queryFuture;
+            queryFuture = dbClient.execute(exec -> exec
                     .namedQuery("select-type-name-by-pokemon-id", pid)
-            ).thenAccept(rows -> {
-                rows.collect().thenAccept(rowsList -> {
-                    final JsonArrayBuilder typesBuilder = Json.createArrayBuilder();
-                    rowsList.forEach(typeRow -> typesBuilder
-                            .add(Json.createValue(typeRow.column("name").as(String.class))));
-                    objectBuilder.add("type", typesBuilder.build());
-                    synchronized(this) {
-                        arrayBuilder.add(objectBuilder.build());
-                    }
-                    if (queryCounter.decrementAndGet() == 0) {
-                       queryFuture.complete(null);
-                    }
-                });
+            ).thenCompose(rows -> {
+                if (queryFuture == null) {
+                    return rows.collect().thenAccept(rowsList -> selectTypes(rowsList, objectBuilder));
+                } else {
+                    return rows.collect().thenCompose(rowsList -> {
+                        selectTypes(rowsList, objectBuilder);
+                        return queryFuture;
+                    });
+                }
             });
+
+
+
         }
 
         @Override
