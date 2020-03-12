@@ -15,9 +15,11 @@
  */
 package cz.kratz.helidon.dbclient.examples;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Flow;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 
 import javax.json.Json;
@@ -27,7 +29,6 @@ import javax.json.JsonValue;
 
 import io.helidon.dbclient.DbClient;
 import io.helidon.dbclient.DbRow;
-import io.helidon.webserver.Handler;
 import io.helidon.webserver.Routing;
 import io.helidon.webserver.ServerRequest;
 import io.helidon.webserver.ServerResponse;
@@ -86,10 +87,8 @@ private static final Logger LOGGER = Logger.getLogger(PokemonService.class.getNa
         dbClient.execute(exec -> exec
                 .namedQuery("select-all-pokemons")
         ).thenAccept(rows -> {
-            CompletionStage<JsonValue> jsonFuture = ReadPokemonRows.buildJson(dbClient, rows.publisher());
-            jsonFuture.thenAccept(jsonValue -> {
-                response.send(jsonValue.toString());
-            });
+            ReadPokemonRows.buildJson(dbClient, rows.publisher())
+                    .thenAccept(response::send);
         });
     }
 
@@ -105,14 +104,16 @@ private static final Logger LOGGER = Logger.getLogger(PokemonService.class.getNa
         final DbClient dbClient;
         final JsonArrayBuilder arrayBuilder;
         final CompletableFuture<JsonValue> jsonFuture;
-        CompletionStage<Void> queryFuture;
+        final AtomicInteger queryCounter;
+        final CompletableFuture<Void> queryFuture;
         Flow.Subscription subscription;
 
         private ReadPokemonRows(DbClient dbClient, CompletableFuture<JsonValue> jsonFuture) {
             this.dbClient = dbClient;
             this.arrayBuilder = Json.createArrayBuilder();
             this.jsonFuture = jsonFuture;
-            this.queryFuture = null;
+            this.queryCounter = new AtomicInteger(0);
+            this.queryFuture = new CompletableFuture<>();
         }
 
         @Override
@@ -127,8 +128,8 @@ private static final Logger LOGGER = Logger.getLogger(PokemonService.class.getNa
             final int pid = row.column("id").as(Integer.class);
             objectBuilder.add("id", pid);
             objectBuilder.add("name", row.column("name").as(String.class));
-            System.out.printf("id: %d name: %s\n", pid, row.column("name").as(String.class));
-            CompletionStage<Void> cs = dbClient.execute(exec -> exec
+            queryCounter.incrementAndGet();
+            dbClient.execute(exec -> exec
                     .namedQuery("select-type-name-by-pokemon-id", pid)
             ).thenAccept(rows -> {
                 rows.collect().thenAccept(rowsList -> {
@@ -136,13 +137,14 @@ private static final Logger LOGGER = Logger.getLogger(PokemonService.class.getNa
                     rowsList.forEach(typeRow -> typesBuilder
                             .add(Json.createValue(typeRow.column("name").as(String.class))));
                     objectBuilder.add("type", typesBuilder.build());
-                    System.out.printf("id: %d Added types: %d\n", pid, rowsList.size());
-                    arrayBuilder.add(objectBuilder.build());
+                    synchronized(this) {
+                        arrayBuilder.add(objectBuilder.build());
+                    }
+                    if (queryCounter.decrementAndGet() == 0) {
+                       queryFuture.complete(null);
+                    }
                 });
             });
-            queryFuture = queryFuture == null
-                    ? cs
-                    : queryFuture.thenCompose(result -> cs);
         }
 
         @Override
@@ -154,7 +156,10 @@ private static final Logger LOGGER = Logger.getLogger(PokemonService.class.getNa
         @Override
         public void onComplete() {
             System.out.printf("Completed\n");
-            queryFuture.thenRun(() -> jsonFuture.complete(arrayBuilder.build()));
+            queryFuture.thenRun(() -> {
+                jsonFuture.complete(arrayBuilder.build());
+                System.out.printf("Done\n");
+            });
         }
 
     }
