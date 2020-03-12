@@ -155,11 +155,8 @@ private static final Logger LOGGER = Logger.getLogger(PokemonService.class.getNa
 
         @Override
         public void onComplete() {
-            System.out.printf("Completed\n");
-            queryFuture.thenRun(() -> {
-                jsonFuture.complete(arrayBuilder.build());
-                System.out.printf("Done\n");
-            });
+            queryFuture.thenRun(() ->
+                jsonFuture.complete(arrayBuilder.build()));
         }
 
     }
