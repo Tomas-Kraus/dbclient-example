@@ -64,15 +64,7 @@ private static final Logger LOGGER = Logger.getLogger(PokemonService.class.getNa
      */
     private void index(ServerRequest request, ServerResponse response) {
         response.send("Pokemon JDBC Example:\n"
-        + "     GET /type                - List all pokemon types\n"
-        + "     GET /pokemon             - List all pokemons\n"
-        + "     GET /pokemon/{id}        - Get pokemon by id\n"
-        + "     GET /pokemon/name/{name} - Get pokemon by name\n"
-        + "    POST /pokemon             - Insert new pokemon:\n"
-        + "                                {\"id\":<id>,\"name\":<name>,\"type\":<type>}\n"
-        + "     PUT /pokemon             - Update pokemon\n"
-        + "                                {\"id\":<id>,\"name\":<name>,\"type\":<type>}\n"
-        + "  DELETE /pokemon/{id}        - Delete pokemon with specified id\n");
+        + "     GET /pokemon             - List all pokemons\n");
     }
 
         /**
