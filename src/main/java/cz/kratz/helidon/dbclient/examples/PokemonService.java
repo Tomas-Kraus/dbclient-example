@@ -75,7 +75,7 @@ private static final Logger LOGGER = Logger.getLogger(PokemonService.class.getNa
         + "  DELETE /pokemon/{id}        - Delete pokemon with specified id\n");
     }
 
-        /**
+    /**
      * Return JsonArray with all stored pokemons.
      * Pokemon object contains list of all type names.
      * This method is abstract because implementation is DB dependent.
